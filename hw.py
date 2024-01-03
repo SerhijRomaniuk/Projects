@@ -1,66 +1,99 @@
 import os
 import shutil
+import zipfile
 import sys
 
-def process_folder(folder_path):
-    for item in os.listdir(folder_path):
-        item_path = os.path.join(folder_path, item)
 
-        if os.path.isdir(item_path):
-            process_folder(item_path)
+def normalize(text):
+    translit_dict = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g',
+        'д': 'd', 'е': 'e', 'є': 'ie', 'ж': 'zh', 'з': 'z',
+        'и': 'y', 'і': 'i', 'ї': 'i', 'й': 'i', 'к': 'k',
+        'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p',
+        'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f',
+        'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+        'ь': '', 'ю': 'iu', 'я': 'ia'
+    }
 
-        elif os.path.isfile(item_path):
-            process_file(item_path)
+    last_dot_index = text.rfind('.')
+    normalized_text = ''
 
-def normalize(filename):
-    trans_map = str.maketrans("абвгдеёзийклмнопрстуфхъыэ", "abvgdeezijklmnoprstufh'yie")
-    filename = filename.lower().translate(trans_map)
-    filename = ''.join(c if c.isalnum() or c == '.' else '_' for c in filename)
-    
-    return filename
-
-def process_folder(folder_path):
-    for root, dirs, files in os.walk(folder_path):
-        for filename in files:
-            file_path = os.path.join(root, filename)
-            normalized_filename = normalize(filename)
-            normalized_file_path = os.path.join(root, normalized_filename)
-            
-            os.rename(file_path, normalized_file_path)
-            
-            _, file_extension = os.path.splitext(normalized_filename)
-            
-            if file_extension[1:].upper() in {'JPEG', 'PNG', 'JPG', 'SVG'}:
-                shutil.move(normalized_file_path, os.path.join('images', normalized_filename))
-            elif file_extension[1:].upper() in {'AVI', 'MP4', 'MOV', 'MKV'}:
-                shutil.move(normalized_file_path, os.path.join('video', normalized_filename))
-            elif file_extension[1:].upper() in {'DOC', 'DOCX', 'TXT', 'PDF', 'XLSX', 'PPTX'}:
-                shutil.move(normalized_file_path, os.path.join('documents', normalized_filename))
-            elif file_extension[1:].upper() in {'MP3', 'OGG', 'WAV', 'AMR'}:
-                shutil.move(normalized_file_path, os.path.join('audio', normalized_filename))
-            elif file_extension[1:].upper() in {'ZIP', 'GZ', 'TAR'}:
-                
-                shutil.unpack_archive(normalized_file_path, os.path.join('archives', normalized_filename[:-len(file_extension)]))
+    for i, char in enumerate(text):
+        if i < last_dot_index:
+            if char.lower() in translit_dict:
+                if char.isupper():
+                    normalized_text += translit_dict[char.lower()].capitalize()
+                else:
+                    normalized_text += translit_dict[char.lower()]
+            elif char.isalnum():
+                normalized_text += char
             else:
-                pass
+                normalized_text += '_'
+        else:
+            normalized_text += char
+
+    return normalized_text
+
+def sort(folder_path):
+    for root, dirs, files in os.walk(folder_path):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            normalized_file_name = normalize(file_name)
+            extension = file_name.split('.')[-1].upper()
+            destination_folder = None
+
+            if extension in ('JPEG', 'PNG', 'JPG', 'SVG'):
+                destination_folder = 'images'
+            elif extension in ('AVI', 'MP4', 'MOV', 'MKV'):
+                destination_folder = 'video'
+            elif extension in ('DOC', 'DOCX', 'TXT', 'PDF', 'XLSX', 'PPTX'):
+                destination_folder = 'documents'
+            elif extension in ('MP3', 'OGG', 'WAV', 'AMR'):
+                destination_folder = 'audio'
+            elif extension in ('ZIP', 'GZ', 'TAR'):
+                destination_folder = 'archives'
+                archive_folder_name = normalized_file_name.rsplit('.', 1)[0]
+                archive_folder_path = os.path.join(folder_path, destination_folder, archive_folder_name)
+                os.makedirs(archive_folder_path, exist_ok=True)
+
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(archive_folder_path)
+
+        
+                continue
+            else:
+                destination_folder = 'unknown'  
+
+            if destination_folder:
+                destination_folder_path = os.path.join(folder_path, destination_folder)
+                os.makedirs(destination_folder_path, exist_ok=True)
+
+                destination_path = os.path.join(destination_folder_path, normalized_file_name)
+                shutil.move(file_path, destination_path)
+                print(f"{file_name} moved to {destination_folder}")
+            else:
+                print(f"{file_name} has unknown extension")
+            
 
     for root, dirs, files in os.walk(folder_path, topdown=False):
         for dir_name in dirs:
             dir_path = os.path.join(root, dir_name)
-            if not os.listdir(dir_path):
+            try:
                 os.rmdir(dir_path)
 
+            except OSError:
+                pass
+
+def main():
+    if len(sys.argv) == 2:
+        folder_path = sys.argv[1]
+        if os.path.isdir(folder_path):
+            sort(folder_path)
+        else:
+            print("Enter folder")
+    else: 
+        print("Enter folder")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python sort.py <folder_path>")
-        sys.exit(1)
-
-    folder_to_sort = sys.argv[1]
-
-    if not os.path.exists(folder_to_sort):
-        print(f"Error: Folder '{folder_to_sort}' does not exist.")
-        sys.exit(1)
-
-    process_folder(folder_to_sort)
-
-    print("Sorting completed.")
+    main()
